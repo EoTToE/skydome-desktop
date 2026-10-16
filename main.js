@@ -6,6 +6,9 @@ const fs = require('fs');
 const http = require('http');
 const crypto = require('crypto');
 
+/* 统一工作目录: 无论从哪启动(快捷方式 / 注册表 Run 自启 / 命令行), koffi 原生模块解析与相对路径都稳定 */
+try { process.chdir(__dirname); } catch (e) { /* ignore */ }
+
 /* Chromium 原生遮挡检测(CalculateNativeWinOcclusion): 桌面层真子窗口(W1)极易被
    Chromium 误判为"被遮挡"而冻结渲染 → 星空定格。必须在 app ready 之前关闭该特性。 */
 app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
@@ -185,7 +188,9 @@ function createWindow() {
       try { win.webContents.send('cursor-pos', { x: p.x, y: p.y, ui: hit }); } catch (e) { /* ignore */ }
     }
     const ignore = !hit;
-    if (ignore !== ignoring) { ignoring = ignore; win.setIgnoreMouseEvents(ignore, { forward: true }); }
+    /* 不再用 {forward:true}: forward 会给窗口加 WS_EX_TRANSPARENT 并把鼠标消息转发给下层,
+       导致其下窗口(含任务栏)的悬停多一跳→迟钝。悬停已改由主进程全局光标驱动, 无需转发。 */
+    if (ignore !== ignoring) { ignoring = ignore; win.setIgnoreMouseEvents(ignore); }
     /* 防 Win+D (单窗口合并 · 方案甲): 唯一窗口被最小化 → 不抢焦点地重新显示并沉底 (契约 §7.1) */
     if (isIconic && showWindow) {
       try {
@@ -459,9 +464,11 @@ async function trashRow(cellId, rowPath) {
 const AUTOSTART_KEY = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run';
 const AUTOSTART_NAME = '星穹桌面';
 function autostartGet() {
+  /* 只看退出码, 不解析输出: reg query 在"值不存在"时退出码=1。
+     (不能用 output 匹配 —— reg 输出是控制台编码, 中文值名会被 Node 按 utf8 解成乱码而误判。) */
   try {
-    const out = require('child_process').execFileSync('reg', ['query', AUTOSTART_KEY, '/v', AUTOSTART_NAME], { windowsHide: true, encoding: 'utf8' });
-    return !!out && out.indexOf(AUTOSTART_NAME) >= 0;
+    require('child_process').execFileSync('reg', ['query', AUTOSTART_KEY, '/v', AUTOSTART_NAME], { windowsHide: true, stdio: 'ignore' });
+    return true;
   } catch (e) { return false; }
 }
 function autostartSet(on) {

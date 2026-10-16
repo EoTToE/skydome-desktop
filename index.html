@@ -10,7 +10,7 @@
   /* 单窗口分层: 星空 canvas(底) → 光效 canvas → 面板/控制台/格子 */
   #sky{position:fixed;inset:0;z-index:0;pointer-events:none}
   #fx{position:fixed;inset:0;pointer-events:none;z-index:1}
-  .panel,.panel *,.cell,.cell *,.quit,#celladd,#celltidy,#console,#console *{pointer-events:auto}
+  .panel,.panel *,.cell,.cell *,.quit,#celladd,#celltidy,#console,#console *,#settings,#settings *,#backplane{pointer-events:auto}
 
   .panel{position:relative;background:rgba(6,14,26,.5);border:1px solid rgba(120,190,255,.26);
     border-radius:11px;backdrop-filter:blur(10px);box-shadow:0 10px 32px rgba(0,0,0,.55)}
