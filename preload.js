@@ -1,0 +1,29 @@
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
+contextBridge.exposeInMainWorld('shell', {
+  getState: () => ipcRenderer.invoke('state:get'),
+  setState: (s) => ipcRenderer.invoke('state:set', s),
+  fsList: (p) => ipcRenderer.invoke('fs:list', p),
+  fsListItems: (items) => ipcRenderer.invoke('fs:listItems', items),
+  fsOpen: (p) => ipcRenderer.invoke('fs:open', p),
+  fsPick: (m) => ipcRenderer.invoke('fs:pick', m),
+  fsReveal: (p) => ipcRenderer.invoke('fs:reveal', p),
+  icon: (p) => ipcRenderer.invoke('fs:icon', p),
+  thumb: (p) => ipcRenderer.invoke('fs:thumb', p),
+  /* Electron 32+ 已移除 File.path: 必须在 preload 用 webUtils 解析真实路径。
+     contextBridge 会把 File 对象按引用传入, webUtils.getPathForFile 返回绝对路径字符串。 */
+  pathForFile: (file) => { try { return webUtils.getPathForFile(file); } catch (e) { return ''; } },
+  cellMenu: (payload) => ipcRenderer.invoke('cell:menu', payload),
+  cellImportChoose: () => ipcRenderer.invoke('cell:import-choose'),
+  cellNewChoose: () => ipcRenderer.invoke('cell:new-choose'),
+  pickTarget: () => ipcRenderer.invoke('cell:pick-target'),
+  getAutostart: () => ipcRenderer.invoke('autostart:get'),
+  setAutostart: (v) => ipcRenderer.invoke('autostart:set', v),
+  classifyDesktop: () => ipcRenderer.invoke('cells:classify'),
+  reportRects: (r) => ipcRenderer.send('hit-rects', r),
+  forceInteractive: (v) => ipcRenderer.send('force-interactive', v),
+  addMessage: (t, l) => ipcRenderer.send('msg:add', t, l),
+  quit: () => ipcRenderer.send('quit-app'),
+  onState: (cb) => ipcRenderer.on('state:changed', (e, s) => cb(s)),
+  onCellAction: (cb) => ipcRenderer.on('cell:action', (e, a) => cb(a)),
+  onCursor: (cb) => ipcRenderer.on('cursor-pos', (e, p) => cb(p)),
+});

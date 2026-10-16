@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>星穹桌面</title>
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:transparent;
+    font-family:"Segoe UI","Microsoft YaHei",sans-serif;color:#dbe9fb;user-select:none}
+  body{pointer-events:none}
+  /* 单窗口分层: 星空 canvas(底) → 光效 canvas → 面板/控制台/格子 */
+  #sky{position:fixed;inset:0;z-index:0;pointer-events:none}
+  #fx{position:fixed;inset:0;pointer-events:none;z-index:1}
+  .panel,.panel *,.cell,.cell *,.quit,#celladd,#celltidy,#console,#console *{pointer-events:auto}
+
+  .panel{position:relative;background:rgba(6,14,26,.5);border:1px solid rgba(120,190,255,.26);
+    border-radius:11px;backdrop-filter:blur(10px);box-shadow:0 10px 32px rgba(0,0,0,.55)}
+  .panel .hd{font-size:10px;letter-spacing:.18em;color:#79c6ff;padding:6px 12px;
+    border-bottom:1px solid rgba(120,190,255,.16)}
+  .panel .bd{padding:8px 12px}
+
+  /* 右侧竖列: 三块面板按 flex 自上而下堆叠, 不再用硬编码 top。
+     skyinfo/track 已搬到中央控制台(半圆, x310.5..874.5), 右列彻底腾空 →
+     max-height 预算 calc(100vh-44px)(仅留上下 22px 边距)。
+     todo 允许 flex-shrink(min-height:0) → 空间不够会自己滚动, 而不是把列撑破。 */
+  #rail{position:fixed;top:22px;right:22px;width:288px;max-height:calc(100vh - 44px);
+    display:flex;flex-direction:column;gap:14px;z-index:2}
+  /* panel-work: 按内容自适应(不再贪婪吃满剩余空间); 至少露出 5 个文件夹行(约 190px), 超出则自身滚动 */
+  #panel-work{flex:0 1 auto;min-height:190px;max-height:50vh;display:flex;flex-direction:column;overflow:hidden}
+  #panel-work .bd{flex:1 1 auto;min-height:0;display:flex;flex-direction:column}
+  #panel-work .pacts{flex:0 0 auto}
+  /* panel-todo: 至少能显示 1 条待办内容(约 120px, 即使暂无待办); 超过则 body 滚动 */
+  #panel-todo{flex:0 1 auto;min-height:120px;display:flex;flex-direction:column;overflow:hidden}
+  #panel-todo .bd{flex:1 1 auto;min-height:0;display:flex;flex-direction:column}
+  #tlist{flex:1 1 auto;min-height:0;max-height:160px;overflow-y:auto;overflow-x:hidden}
+  #panel-todo .addrow{flex:0 0 auto}
+  /* panel-msgs: 固定高, 恰好 3 条 (用户: 大小保持不变) */
+  #panel-msgs{flex:0 0 auto}
+  #mlist{height:66px;overflow:hidden}
+
+  .wksub{font-size:11px;color:#9fbcd8;margin-bottom:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:0 0 auto}
+  #wklist{flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden}
+  .wkitem{font-size:12px;color:#bcd6f0;padding:4px 0;display:flex;gap:7px;align-items:center;
+    cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border-radius:5px}
+  .wkitem:hover{color:#eaf4ff}
+  .wkitem.sel{color:#eaf4ff;background:rgba(90,170,255,.22);box-shadow:inset 0 0 0 1px rgba(150,220,255,.45);padding-left:6px;padding-right:6px}
+  .wkempty{font-size:11px;color:#6f8aa6;padding:3px 0}
+  .pacts{display:flex;gap:14px;padding:0 12px 10px}
+  .pacts span{font-size:11px;color:#7fd0ff;cursor:pointer}
+  .pacts span:hover{color:#dff2ff}
+  .pacts span.off{color:#5c7b98;cursor:default}
+
+  /* ===== 工作格子 · 空闲态「拾光卡」(联网内容轮播) =====
+     仅在无「正在工作」待办时出现; 复用面板既有配色(accent #79c6ff/#5fd0ff, 弱化 #9fbcd8, 警示金 #ffd479)。
+     288px 宽面板内紧凑排布。 */
+  .idlecard{display:flex;flex-direction:column;gap:6px}
+  .idletop{display:flex;align-items:center;gap:6px;font-size:10px;letter-spacing:.08em}
+  .idletop .srclabel{flex:1 1 auto;min-width:0;color:#79c6ff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .idletop .idlebtn{flex:0 0 auto;color:#7fd0ff;cursor:pointer;padding:0 3px;border-radius:4px;font-size:12px;line-height:1}
+  .idletop .idlebtn:hover{color:#dff2ff;background:rgba(120,190,255,.16)}
+  .idlthumb{width:100%;height:86px;object-fit:cover;border-radius:7px;display:block;border:1px solid rgba(120,190,255,.22)}
+  .idltitle{font-size:12px;color:#dbe9fb;line-height:1.35;cursor:pointer}
+  .idltitle:hover{color:#eaf4ff}
+  .idltext{font-size:11px;color:#9fbcd8;line-height:1.4}
+  .idlquote{font-size:12px;color:#dbe9fb;line-height:1.55}   /* 一言(原生中文) */
+  .idlsrc{font-size:10px;color:#6f8aa6}
+  .idllink{font-size:11px;color:#7fd0ff;cursor:pointer}
+  .idllink:hover{color:#dff2ff}
+  .idlkp{display:flex;align-items:baseline;gap:8px}
+  .idlkp .idlkpv{font-family:Consolas,monospace;font-size:20px;color:#5fd0ff;line-height:1}
+  .idlkp .idlkpv.warn{color:#ff6b6b}
+  .idlkp .idlkpt{font-size:11px;color:#9fbcd8}
+  .idlkp .idlkpt.warn{color:#ff6b6b}   /* Kp≥5: 红「地磁活动偏强」 */
+  .idlehn{display:flex;flex-direction:column;gap:4px}
+  .hnrow{display:flex;gap:8px;align-items:baseline;cursor:pointer;font-size:11px;color:#bcd6f0;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .hnrow:hover{color:#eaf4ff}
+  .hnrow .hntitle{flex:1 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .hnrow .hnscore{flex:0 0 auto;color:#ffd479;font-family:Consolas,monospace;font-size:10px}
+
+  .row{font-size:12px;color:#bcd6f0;padding:4px 0;border-bottom:1px dashed rgba(120,190,255,.12);
+    display:flex;gap:7px;align-items:center}
+  .row.done .tx{text-decoration:line-through;opacity:.5}
+  .cb{width:12px;height:12px;border:1px solid #4fe3e0;border-radius:3px;flex:0 0 auto;cursor:pointer}
+  .cb.on{background:#4fe3e0;box-shadow:0 0 8px #4fe3e0}
+  .tx{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .tag{font-size:9px;color:#08141b;background:#4fe3e0;border-radius:3px;padding:1px 4px;cursor:pointer;white-space:nowrap}
+  .tag.off{background:#2a3b4d;color:#8fb2d0}
+  .fl{color:#7fd0ff;cursor:pointer;font-size:11px;white-space:nowrap}
+  .x{margin-left:auto;color:#5c7b98;cursor:pointer;font-size:14px}
+  .x:hover{color:#ff8a8a}
+  .addrow{display:flex;gap:6px;margin-top:6px}
+  .addrow input{flex:1;background:rgba(10,22,38,.8);border:1px solid rgba(120,190,255,.3);
+    color:#dbe9fb;border-radius:6px;padding:4px 8px;font-size:12px;outline:none}
+  .addrow button{background:rgba(30,60,100,.7);border:1px solid rgba(120,190,255,.35);color:#cfe6ff;
+    border-radius:6px;padding:4px 9px;cursor:pointer}
+  .msg{font-size:11px;line-height:1.35;color:#a9c6e4;padding:3px 0;border-bottom:1px dashed rgba(120,190,255,.1);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .msg .mt{color:#5f83a8;font-family:Consolas,monospace;margin-right:6px}
+  .msg.ok{color:#a7f0d6} .msg.warn{color:#ffd78a} .msg.err{color:#ff9b9b}
+  .msg.act{cursor:pointer;text-decoration:underline dotted;text-underline-offset:2px}
+
+  /* 一键「普通桌面」: 隐藏星穹一切, 露出真实桌面; 右下角留返回按钮 */
+  body.plain #sky,body.plain #fx,body.plain #rail,body.plain #console,body.plain #cells{display:none}
+  #backplane{position:fixed;right:16px;bottom:16px;display:none;font-size:12px;color:#ffd868;
+    border:1px solid rgba(255,212,121,.45);border-radius:9px;padding:7px 13px;cursor:pointer;
+    background:rgba(8,16,26,.62);z-index:20;box-shadow:0 6px 18px rgba(0,0,0,.5)}
+  body.plain #backplane{display:block}
+  #backplane:hover{color:#fff3d6;border-color:rgba(255,212,121,.85)}
+
+  /* 设置面板 */
+  #settings{position:fixed;inset:0;display:none;z-index:30;background:rgba(3,7,14,.55)}
+  body.setopen #settings{display:block}
+  #settings .box{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:430px;
+    background:rgba(8,18,32,.97);border:1px solid rgba(120,190,255,.42);border-radius:14px;padding:18px 20px;
+    box-shadow:0 20px 60px rgba(0,0,0,.72)}
+  #settings h3{margin:0 0 12px;font-size:14px;color:#ffd868;letter-spacing:.1em}
+  #settings .f{display:flex;align-items:center;gap:8px;margin:9px 0;font-size:12px;color:#cfe0f5}
+  #settings .f label{width:86px;color:#9fbcd8}
+  #settings input[type=text],#settings input[type=number],#settings select{flex:1;background:rgba(10,22,38,.9);
+    border:1px solid rgba(120,190,255,.3);color:#dbe9fb;border-radius:6px;padding:5px 8px;font-size:12px;outline:none}
+  #settings input[type=checkbox]{width:15px;height:15px}
+  #settings .tip{margin-top:8px;font-size:11px;color:#6f8aa6}
+  #settings .btns{display:flex;justify-content:flex-end;gap:10px;margin-top:14px}
+  #settings .btns button{background:rgba(30,60,100,.85);border:1px solid rgba(120,190,255,.4);color:#cfe6ff;
+    border-radius:7px;padding:6px 14px;cursor:pointer;font-size:12px}
+  #settings .btns button:hover{background:rgba(40,80,130,.95)}
+
+  /* 格子: 平时【近乎全透明】(透看星穹)、只留名称清晰; 悬停 → 磨砂玻璃(背景模糊) + 扫光 + 粒子(renderer 的 burst) */
+  .cell{position:absolute;width:300px;border-radius:10px;overflow:hidden;
+    display:flex;flex-direction:column;height:300px;
+    background:rgba(10,20,34,.36);border:1px solid rgba(255,212,121,.20);
+    backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px);
+    box-shadow:0 4px 14px rgba(0,0,0,.42);
+    transition:background .3s,border-color .3s,box-shadow .3s,backdrop-filter .3s,height .24s ease,width .24s ease}
+  /* 光标不在格子上 → 折叠成标题条(36px), 只剩名字浮在星空上; 移入(.hot) → 展开到设定高度。
+     手动胶囊(.capsule)仍固定折叠。右侧面板不受影响。 */
+  .cell:not(.hot){height:36px !important;width:132px !important}
+  .cell:not(.hot) .grip{display:none}
+  .cell:not(.hot) .b,.cell:not(.hot) .acts{display:none}
+  .cell.hot{width:300px;z-index:10;background:rgba(14,28,48,.62);border-color:rgba(150,220,255,.72);
+    backdrop-filter:blur(12px) saturate(1.12);-webkit-backdrop-filter:blur(12px) saturate(1.12);
+    box-shadow:0 0 38px rgba(95,190,255,.45),0 10px 30px rgba(0,0,0,.6)}
+  /* 悬停扫光 (一次性动画; .hot 由 renderer 的 mouseenter 添加) */
+  .cell.hot::after{content:'';position:absolute;inset:0;pointer-events:none;border-radius:14px;
+    background:linear-gradient(115deg,transparent 32%,rgba(150,210,255,.12) 48%,transparent 64%);
+    animation:cellSweep 1.5s ease-out}
+  @keyframes cellSweep{from{transform:translateX(-65%);opacity:0}28%{opacity:1}to{transform:translateX(65%);opacity:0}}
+  .cell .t{font-size:11px;letter-spacing:.12em;color:#ffd868;padding:9px 12px;cursor:move;
+    border-bottom:1px solid rgba(255,212,121,.18);display:flex;align-items:center;gap:6px;
+    text-shadow:0 0 9px rgba(255,205,100,.45),0 1px 3px rgba(0,0,0,.95)}
+  .cell .t .sp{margin-left:auto;color:#7fa6c8;font-size:10px;text-shadow:0 1px 3px rgba(0,0,0,.9)}
+  .cell .b{padding:8px 12px 6px;flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden}
+  .cell .it{font-size:12px;color:rgba(202,222,242,.8);padding:3px 0;display:flex;gap:7px;align-items:center;cursor:pointer;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border-radius:5px;
+    text-shadow:0 1px 3px rgba(0,0,0,.85);transition:color .25s}
+  .cell.hot .it{color:#dcecff}
+  .cell .it:hover{color:#eaf4ff}
+  .cell .it.sel{color:#eaf4ff;background:rgba(90,170,255,.22);box-shadow:inset 0 0 0 1px rgba(150,220,255,.45);padding-left:6px;padding-right:6px}
+  .cell .empty{font-size:11px;color:rgba(126,156,186,.72);padding:4px 0;text-shadow:0 1px 3px rgba(0,0,0,.85)}
+  .cell .acts{display:flex;gap:10px;padding:0 12px 9px;flex:0 0 auto}
+  .cell .acts span{font-size:10px;color:#7fd0ff;cursor:pointer;text-shadow:0 1px 3px rgba(0,0,0,.9)}
+  .cell .acts span:hover{color:#dff2ff}
+  /* 图标自适应: 文件少 → 图标大; 多 → 小 (类由 renderer 按数量加在 .b 上) */
+  .cell .b.d1 .it{font-size:12px;padding:5px 0}
+  .cell .b.d1 .it .ico{width:24px;height:24px}
+  .cell .b.d2 .it{font-size:11px;padding:3px 0}
+  .cell .b.d2 .it .ico{width:18px;height:18px}
+  .cell .b.d3 .it{font-size:11px;padding:2px 0}
+  .cell .b.d3 .it .ico{width:15px;height:15px}
+
+  /* 边框拖拽手柄 (右下角): 改高度, 结束时持久化 h */
+  .cell .grip{position:absolute;right:0;bottom:0;width:16px;height:16px;cursor:nwse-resize;z-index:3;
+    background:linear-gradient(135deg,transparent 52%,rgba(140,200,255,.5) 52%);
+    border-bottom-right-radius:14px}
+  .cell .grip:hover{background:linear-gradient(135deg,transparent 46%,rgba(185,225,255,.95) 46%)}
+
+  /* 胶囊折叠: 头部右侧 chevron 切换; 折叠后只留头部(34px), 藏 .b/.acts/.grip。
+     折叠不改 cell.h → 展开即还原原高度。 */
+  .cell .t .cap{margin-left:6px;flex:0 0 auto;color:#7fb2d8;font-size:11px;line-height:1;
+    cursor:pointer;padding:1px 3px;border-radius:4px}
+  .cell .t .cap:hover{color:#dff2ff;background:rgba(120,190,255,.16)}
+  .cell.capsule{height:34px!important;min-height:34px}
+  .cell.capsule .b,.cell.capsule .acts,.cell.capsule .grip{display:none}
+  .cell.capsule .t{border-bottom:none}
+
+  /* 真实文件图标: 槽位常驻 16px, 图标未到/取不到都留白, 绝不画占位点。
+     不做任何滤镜/调色/放大 —— 只显示 Windows 原生图标本身。 */
+  .ico{width:16px;height:16px;flex:0 0 auto;border-radius:3px;object-fit:contain;visibility:hidden}
+  .nm{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .cell .it,.wkitem{min-width:0}
+
+  /* 选中高亮 (单击) */
+  .cell.sel{border-color:rgba(150,220,255,.9);box-shadow:0 0 30px rgba(95,190,255,.5),0 10px 30px rgba(0,0,0,.6)}
+  /* 拖入投放提示 */
+  .cell.drop{border-color:rgba(120,255,190,.9);box-shadow:0 0 34px rgba(90,230,170,.6)}
+  /* 就地重命名输入框 (替代 window.prompt) */
+  .rn{flex:1;min-width:0;background:rgba(10,22,38,.92);border:1px solid rgba(120,190,255,.55);
+    color:#dbe9fb;border-radius:5px;padding:2px 6px;font-size:11px;outline:none}
+  /* 控制台控制条: 三枚真实按钮 + 预留旋钮位, 仅控制台展开时可见。 */
+  #console .controls{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:8px 10px;width:100%}
+  #console #celladd,#console #celltidy,#console .quit,#console #spdv,#console #plainmode,#console #setbtn{font-size:10px;color:#8fd0ff;
+    border:1px solid rgba(120,190,255,.35);border-radius:6px;padding:3px 7px;cursor:pointer;
+    background:rgba(8,16,26,.55);white-space:nowrap}
+  #console #celladd:hover,#console #celltidy:hover,#console .quit:hover,#console #spdv:hover,#console #plainmode:hover,#console #setbtn:hover{color:#dff2ff;border-color:rgba(150,210,255,.6)}
+
+  /* ===== 中央控制台 (半圆控制舱) —— 契约 §1.5 =====
+     默认【紧凑态】: 230x130 半圆, 只显 时钟+日期; 悬停展开为完整 564x320(标题/搜索/星表/控制条)。
+     bottom:36.4px 固定 + left:50% translateX(-50%) → 展开时【底边不动、向上生长】,
+     光标始终留在舱内 → 不会因展开而触发 mouseleave 抖动。width/height 过渡让展开平滑。 */
+  #console{position:fixed;left:50%;transform:translateX(-50%);bottom:36.4px;
+    width:230px;height:130px;box-sizing:border-box;overflow:hidden;
+    border-radius:115px 115px 0 0;
+    background:radial-gradient(130% 92% at 50% 90%, rgba(12,30,54,.66) 0%, rgba(6,14,26,.44) 58%, rgba(4,10,20,.24) 100%);
+    border:1px solid rgba(120,190,255,.24);border-bottom:none;backdrop-filter:blur(9px);
+    box-shadow:0 8px 30px rgba(0,0,0,.5);
+    display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:5px;
+    padding:16px 12px 8px;z-index:2;
+    transition:width .28s ease,height .28s ease,border-radius .28s ease,padding .28s ease}
+  #console.open{width:564px;height:320px;border-radius:282px 282px 0 0;padding:34px 18px 10px}
+  /* 紧凑态: 只留 时钟+日期, 其余整行/面板/控制条一律隐藏 */
+  #console:not(.open) .sub,
+  #console:not(.open) .srch,
+  #console:not(.open) #panel-track,
+  #console:not(.open) .controls{display:none}
+  /* 舱内两个自包含 section 去掉自身外框(外壳由 #console 提供), 只保留内容流 */
+  #console .panel{position:static;width:100%;height:auto;background:none;border:none;box-shadow:none;backdrop-filter:none}
+  #console .panel .bd{padding:0}
+  #console .row{display:flex;align-items:center;justify-content:center;gap:12px;width:100%}
+  #console .clock{font-family:Consolas,monospace;font-size:23px;color:#eaf4ff;letter-spacing:1px;line-height:1}
+  #console .date{font-size:11px;color:#9fbcd8}
+  #console .sub{font-size:11px;color:#7f9fbf;white-space:nowrap}
+  #console .sub b{color:#a9d6ff;font-weight:600}
+  /* 紧凑态也显示的天和实时状态 (11px, 同「位置/天气」字号) */
+  #console .cssinfo{font-size:11px;color:#c9b06a}
+  #console .cssinfo b{color:#ffd479;font-weight:600}
+  #console .srch{width:74%;max-width:410px}
+  #console .srch input{width:100%;box-sizing:border-box;background:rgba(8,20,36,.72);border:1px solid rgba(120,200,255,.30);
+    border-radius:6px;color:#dff0ff;font-size:12px;padding:5px 9px;outline:none;text-align:center;
+    font-family:"Segoe UI","Microsoft YaHei",sans-serif}
+  #console .srch input:focus{border-color:#5fd0ff;box-shadow:0 0 10px rgba(95,208,255,.35)}
+  #console .srch input::placeholder{color:rgba(140,180,215,.55)}
+  #console .qres{font-size:11px;color:#8fb8d8;text-align:center;line-height:1.4;min-height:15px}
+  #console .qres.ok{color:#9fe6b0} #console .qres.no{color:#ff9d9d} #console .qres.dim{color:#c9b06a}
+  #console .trklist{display:grid;grid-template-columns:repeat(3,1fr);gap:3px 6px;width:86%}
+  #console .trklist .r{display:block;text-align:center;padding:3px 2px;border-radius:5px;font-size:11px;color:#dff0ff;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
+  #console .trklist .r:hover{background:rgba(95,208,255,.10)}
+  #console .trklist .r.on{background:rgba(255,212,121,.14);box-shadow:inset 0 0 0 1px rgba(255,212,121,.35);color:#ffe6b0}
+  #console .trknow{font-size:11px;color:#c9b06a;text-align:center}
+  #console .trknow b{color:#ffd479;font-weight:600}
+  /* 预留控制位 (虚线旋钮位) */
+  #console .slot{width:28px;height:28px;border:1px dashed rgba(120,190,255,.32);border-radius:7px;
+    display:flex;align-items:center;justify-content:center;font-size:9px;color:rgba(150,200,255,.40)}
+
+  /* 悬停提示 (星空悬停, 来自引擎) */
+  #tip{position:fixed;z-index:40;pointer-events:none;opacity:0;transition:opacity .18s ease;
+    background:rgba(8,18,32,.88);border:1px solid rgba(140,205,255,.5);border-radius:8px;
+    padding:7px 11px;font-size:12px;color:#eaf4ff;box-shadow:0 6px 22px rgba(0,0,0,.6);white-space:nowrap}
+  #tip .nm{color:#bfe4ff;font-weight:600} #tip .mg{color:#8fb8d8;font-family:Consolas,monospace;margin-left:8px}
+
+  /* 滚动条: 玻璃暗色, 与 HUD 一致 */
+  #wklist::-webkit-scrollbar,.cell .b::-webkit-scrollbar{width:6px}
+  #wklist::-webkit-scrollbar-thumb,.cell .b::-webkit-scrollbar-thumb{background:rgba(120,190,255,.35);border-radius:3px}
+  #wklist::-webkit-scrollbar-track,.cell .b::-webkit-scrollbar-track{background:transparent}
+
+  /* 退出/新建/整理 三枚按钮已内联进 #console 控制条(见上), 不再有独立的左下角固定位。 */
+</style>
+</head>
+<body>
+<canvas id="sky"></canvas>
+<canvas id="fx"></canvas>
+
+<div id="rail">
+  <div id="panel-work" class="panel">
+    <div class="hd" id="workhd">工作格子</div>
+    <div class="bd">
+      <div class="wksub" id="wksub">未激活 · 在待办里点『正在工作』</div>
+      <div id="wklist"></div>
+    </div>
+    <div class="pacts">
+      <span id="wkopen" class="off">↗ 资源管理器</span>
+      <span id="wkref">⟳ 刷新</span>
+    </div>
+  </div>
+
+  <div id="panel-todo" class="panel">
+    <div class="hd">待办 · 正在工作</div>
+    <div class="bd"><div id="tlist"></div>
+      <div class="addrow"><input id="tnew" placeholder="添加待办，回车"><button id="tadd">+</button></div>
+    </div>
+  </div>
+
+  <div id="panel-msgs" class="panel">
+    <div class="hd">消息 · 实时</div>
+    <div class="bd" id="mlist"></div>
+  </div>
+</div>
+
+<!-- 中央控制台 (半圆控制舱): 承载 panel-skyinfo + panel-track (id 不变) + ≥4 预留控制位 -->
+<div id="console">
+  <section id="panel-skyinfo" class="panel">
+    <div class="bd">
+      <div class="row"><div class="clock" id="clk">--:--:--</div></div>
+      <div class="row"><div class="date" id="dt">---</div></div>
+      <div class="row"><div class="sub">位置 <b id="loc">长沙</b> · 天气 <b id="wx">—</b> · 恒星 <b id="starc">—</b> · 在轨 <b id="satc">—</b></div></div>
+      <div class="row"><div class="cssinfo" id="cssinfo">天和 · 定位中…</div></div>
+      <div class="row"><div class="srch"><input id="q" type="text" placeholder="输入星名 / HIP 代号" autocomplete="off" spellcheck="false">
+        <div class="qres" id="qres"></div></div></div>
+    </div>
+  </section>
+  <section id="panel-track" class="panel">
+    <div class="bd">
+      <div class="trklist" id="trklist"></div>
+      <div class="trknow" id="trknow">追踪中 <b>未选择</b></div>
+    </div>
+  </section>
+  <div class="controls">
+    <div id="setbtn" title="设置">⚙ 设置</div>
+    <div id="plainmode" title="一键回到普通桌面（右下角可返回）">⤓ 普通桌面</div>
+    <div id="spdv" title="时间流速（点击切换：实时 / ×30 / ×120 / ×300 / ×600 / ×1800）">⏩ ×120</div>
+    <div id="celladd" title="新建格子">＋ 新建格子</div>
+    <div id="celltidy" title="整理格子（对齐网格）">▦ 整理</div>
+    <div class="quit" id="quit">退出浮层</div>
+    <div class="slot" title="预留控制位">·</div>
+    <div class="slot" title="预留控制位">·</div>
+  </div>
+</div>
+
+<div id="cells"></div>
+<div id="backplane" title="回到星穹桌面">← 回到星穹桌面</div>
+
+<!-- 设置面板 -->
+<div id="settings">
+  <div class="box">
+    <h3>星穹桌面 · 设置</h3>
+    <div class="f"><label>城市</label><input id="st-city" type="text" placeholder="长沙"></div>
+    <div class="f"><label>纬度</label><input id="st-lat" type="number" step="0.01"></div>
+    <div class="f"><label>经度</label><input id="st-lon" type="number" step="0.01"></div>
+    <div class="f"><label>时间流速</label><select id="st-speed">
+      <option value="1">实时(×1)</option><option value="30">×30</option><option value="120">×120</option>
+      <option value="300">×300</option><option value="600">×600</option><option value="1800">×1800</option></select></div>
+    <div class="f"><label>开机自启</label><input id="st-auto" type="checkbox"><span class="tip">(写入当前用户启动项, 免管理员)</span></div>
+    <div class="f"><label>显示右列</label><input id="st-rail" type="checkbox"></div>
+    <div class="f"><label>显示格子</label><input id="st-cells" type="checkbox"></div>
+    <div class="tip">位置用于计算星穹(默认 长沙 28.23, 112.94)。改完点保存即生效。</div>
+    <div class="btns"><button id="st-classify">按分类重建格子</button><button id="st-close">关闭</button><button id="st-save">保存</button></div>
+  </div>
+</div>
+
+<div id="tip"></div>
+
+<script src="_lib/satellite.min.js"></script>
+<script src="_lib/hipparcos_5.js"></script>
+<script src="sky-engine.js"></script>
+<script src="renderer.js"></script>
+</body>
+</html>

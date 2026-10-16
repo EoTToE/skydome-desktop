@@ -1,0 +1,34 @@
+{
+  "name": "skydome-desktop",
+  "version": "1.0.0",
+  "description": "星穹桌面 — 动态星空壁纸 + 桌面文件格子 + 信息浮层，合一的 Windows 桌面增强工具（Electron）",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "keywords": [
+    "electron",
+    "desktop",
+    "wallpaper",
+    "starry-sky",
+    "astronomy",
+    "desktop-widgets",
+    "windows"
+  ],
+  "author": "",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/<your-name>/skydome-desktop.git"
+  },
+  "bugs": {
+    "url": "https://github.com/<your-name>/skydome-desktop/issues"
+  },
+  "homepage": "https://github.com/<your-name>/skydome-desktop#readme",
+  "devDependencies": {
+    "electron": "^44.7.2"
+  },
+  "dependencies": {
+    "koffi": "^3.3.3"
+  }
+}

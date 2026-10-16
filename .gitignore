@@ -1,0 +1,24 @@
+# 依赖
+node_modules/
+
+# 运行时状态(含本机桌面路径, 不应提交)
+data/state.json
+data/*.json
+
+# 备份 / 临时 / 验证产物
+*.bak
+*.bak-*
+*.bakt
+_bak*
+_verify*
+*.log
+
+# 打包产物
+dist/
+out/
+星穹桌面/
+
+# 系统
+Thumbs.db
+desktop.ini
+.DS_Store
