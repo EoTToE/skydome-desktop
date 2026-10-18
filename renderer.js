@@ -133,6 +133,18 @@
       markRect();
     }
     var sb = document.getElementById('setbtn'); if (sb) sb.onclick = function (e) { e.stopPropagation(); openSettings(); };
+    var sw = document.getElementById('st-wall');
+    if (sw) sw.onclick = function (e) {
+      e.stopPropagation();
+      var cv = document.getElementById('sky');
+      if (!cv || !shell.setOsWallpaper) return;
+      var url = '';
+      try { url = cv.toDataURL('image/png'); } catch (err) { url = ''; }
+      if (!url) { addLocalMsg('导出壁纸失败', 'err'); return; }
+      shell.setOsWallpaper(url).then(function (ok) {
+        addLocalMsg('Windows 壁纸：' + (ok ? '已设为当前星空（静态，UAC/锁屏也可见）' : '设置失败'), ok ? 'ok' : 'err');
+      });
+    };
     var scl = document.getElementById('st-classify');
     if (scl) scl.onclick = function (e) {
       e.stopPropagation();
@@ -695,7 +707,23 @@
       row.className = 'row' + (t.done ? ' done' : '');
       var cb = document.createElement('span'); cb.className = 'cb' + (t.done ? ' on' : '');
       cb.onclick = function () { t.done = !t.done; save(); renderAll(); };
-      var tx = document.createElement('span'); tx.className = 'tx'; tx.textContent = t.text; tx.title = t.text;
+      var tx = document.createElement('span'); tx.className = 'tx'; tx.textContent = t.text; tx.title = t.text + '（双击改名）';
+      tx.ondblclick = function (ev) {           // 双击待办文字 → 就地改名
+        ev.stopPropagation();
+        var inp = document.createElement('input'); inp.className = 'rn'; inp.value = t.text;
+        row.replaceChild(inp, tx); inp.focus(); inp.select();
+        shell.forceInteractive && shell.forceInteractive(true);
+        var done = false;
+        function fin(commit) {
+          if (done) return; done = true;
+          shell.forceInteractive && shell.forceInteractive(false);
+          if (commit) { var v = inp.value.trim(); if (v) t.text = v; }
+          save(); renderAll();
+        }
+        inp.addEventListener('keydown', function (e) { if (e.key === 'Enter') fin(true); else if (e.key === 'Escape') fin(false); });
+        inp.addEventListener('blur', function () { fin(true); });
+        inp.addEventListener('mousedown', function (e) { e.stopPropagation(); });
+      };
       var tag = document.createElement('span'); tag.className = 'tag' + (t.working ? '' : ' off');
       tag.textContent = t.working ? '正在工作' : '工作';
       tag.title = '设为/取消 正在工作';

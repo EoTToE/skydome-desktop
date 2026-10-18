@@ -528,6 +528,21 @@ function classifyDesktop() {
   addMessage('已按分类重建 ' + cells.length + ' 个格子', 'ok');
   return { ok: true, cells: cells.length };
 }
+/* 把当前星空(渲染进程给的 PNG dataURL) 设为 Windows 桌面壁纸。
+   用途: UAC 安全桌面 / 锁屏 / 权限弹窗时也看到同一片星空(静态), 且可关掉本程序省 CPU/GPU。
+   SPI_SETDESKWALLPAPER=20, SPIF_UPDATEINIFILE|SPIF_SENDCHANGE=0x03 */
+function setOsWallpaperFromDataUrl(dataUrl) {
+  try {
+    const b64 = String(dataUrl || '').split(',')[1] || '';
+    if (!b64) return false;
+    const p = path.join(app.getPath('temp'), 'skydome-wallpaper.png');
+    fs.writeFileSync(p, Buffer.from(b64, 'base64'));
+    const koffi = require('koffi');
+    const u32 = koffi.load('user32.dll');
+    const f = u32.func('bool __stdcall SystemParametersInfoW(uint32 uiAction, uint32 uiParam, const char16_t *pvParam, uint32 fWinIni)');
+    return !!f(20, 0, p, 3);
+  } catch (e) { console.warn('[wallpaper]', e && e.message); return false; }
+}
 function registerIpc() {
   ipcMain.handle('state:get', () => state);
   ipcMain.handle('state:set', (e, s) => { if (s && typeof s === 'object') { state = s; migrateState(); persist(); } return state; });
@@ -628,6 +643,7 @@ function registerIpc() {
   ipcMain.handle('autostart:get', () => autostartGet());
   ipcMain.handle('autostart:set', (e, on) => autostartSet(!!on));
   ipcMain.handle('cells:classify', () => classifyDesktop());
+  ipcMain.handle('os:wallpaper', (e, dataUrl) => setOsWallpaperFromDataUrl(dataUrl));
   ipcMain.on('hit-rects', (e, r) => { if (Array.isArray(r)) rects = r; });
   ipcMain.on('force-interactive', (e, v) => { forceInteractive = !!v; });
   ipcMain.on('msg:add', (e, text, level) => addMessage(text, level));

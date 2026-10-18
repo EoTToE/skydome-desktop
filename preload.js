@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld('shell', {
   getAutostart: () => ipcRenderer.invoke('autostart:get'),
   setAutostart: (v) => ipcRenderer.invoke('autostart:set', v),
   classifyDesktop: () => ipcRenderer.invoke('cells:classify'),
+  setOsWallpaper: (d) => ipcRenderer.invoke('os:wallpaper', d),
   reportRects: (r) => ipcRenderer.send('hit-rects', r),
   forceInteractive: (v) => ipcRenderer.send('force-interactive', v),
   addMessage: (t, l) => ipcRenderer.send('msg:add', t, l),
