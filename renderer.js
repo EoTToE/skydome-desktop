@@ -122,6 +122,8 @@
       if (sp) sp.value = String(sc.speed || (window.SkyHost && window.SkyHost.speed) || 1);
       var r = document.getElementById('st-rail'); if (r) r.checked = (sc.showRail !== false);
       var c = document.getElementById('st-cells'); if (c) c.checked = (sc.showCells !== false);
+      var wa = document.getElementById('st-wallauto'); if (wa) wa.checked = !!sc.wallAuto;
+      var wmn = document.getElementById('st-wallmin'); if (wmn) wmn.value = sc.wallMin || 5;
       if (shell.getAutostart) shell.getAutostart().then(function (v) { var a = document.getElementById('st-auto'); if (a) a.checked = !!v; });
       document.body.classList.add('setopen');
       shell.forceInteractive && shell.forceInteractive(true);
@@ -170,6 +172,11 @@
       if (isFinite(sd) && window.SkyHost && window.SkyHost.setSpeed) { window.SkyHost.setSpeed(sd); S.settings.speed = sd; }
       S.settings.showRail = document.getElementById('st-rail').checked;
       S.settings.showCells = document.getElementById('st-cells').checked;
+      S.settings.wallAuto = document.getElementById('st-wallauto').checked;
+      var wm = parseInt(document.getElementById('st-wallmin').value, 10);
+      S.settings.wallMin = (isFinite(wm) && wm > 0) ? wm : 5;
+      wallSig = '';                      // 强制 applyWallAuto 重新按新配置起定时器
+      if (S.settings.wallAuto) pushOsWallpaper();
       applyVis();
       var au = document.getElementById('st-auto').checked;
       if (shell.setAutostart) shell.setAutostart(au).then(function () { addLocalMsg('开机自启：' + (au ? '已开启' : '已关闭'), 'info'); });
@@ -311,7 +318,27 @@
   }
 
   /* ---------- 渲染 ---------- */
-  function renderAll() { renderWork(); renderTodo(); renderMsgs(); renderCells(); markRect(); }
+  function renderAll() { applyWallAuto(); renderWork(); renderTodo(); renderMsgs(); renderCells(); markRect(); }
+  /* ---- 静态壁纸: 导出当前星空 → Windows 壁纸; 可选定时重导(跟着天象走) ---- */
+  var wallTimer = null, wallSig = '';
+  function pushOsWallpaper() {
+    var cv = document.getElementById('sky');
+    if (!cv || !shell.setOsWallpaper) return;
+    var url = '';
+    try { url = cv.toDataURL('image/png'); } catch (e) { url = ''; }
+    if (!url) return;
+    shell.setOsWallpaper(url).then(function (ok) {
+      addLocalMsg('Windows 壁纸已更新' + (ok ? '' : '（失败）'), ok ? 'info' : 'err');
+    });
+  }
+  function applyWallAuto() {
+    var sc = (S && S.settings) || {};
+    var sig = (sc.wallAuto ? '1' : '0') + '|' + (sc.wallMin || 5);
+    if (sig === wallSig) return;
+    wallSig = sig;
+    if (wallTimer) { clearInterval(wallTimer); wallTimer = null; }
+    if (sc.wallAuto) wallTimer = setInterval(pushOsWallpaper, Math.max(1, sc.wallMin || 5) * 60000);
+  }
 
   /* ---------- 工作格子 · 空闲态「拾光卡」(联网内容轮播) ----------
      无「正在工作」待办时, 轮播 3 个免费无 key、支持 CORS 的源:
