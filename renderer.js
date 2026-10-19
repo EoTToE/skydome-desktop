@@ -808,7 +808,7 @@
     var all = (S.messages || []);
     var list = all.filter(function (m) {
       return (msgsTab === 'search') ? (m.kind === 'search') : (m.kind !== 'search');
-    }).slice(0, 3);
+    }).slice(0, 20);                            // 保留最近 20 条, 面板内可滚动查看
     var tabs = document.querySelectorAll('.mtab');
     for (var i = 0; i < tabs.length; i++) tabs[i].classList.toggle('on', tabs[i].getAttribute('data-mt') === msgsTab);
     if (!list.length) { el.innerHTML = '<div class="empty">' + (msgsTab === 'search' ? '输入关键字回车搜索' : '暂无消息') + '</div>'; return; }

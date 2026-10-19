@@ -100,6 +100,10 @@
   .msg.act{cursor:pointer;text-decoration:underline dotted;text-underline-offset:2px}
   .mtab{font-weight:600;color:#6f8aa6;cursor:pointer;font-size:10px;letter-spacing:.06em}
   .mtab.on{color:#ffd868}
+  /* 消息列表可滚动(最近 20 条) */
+  #mlist::-webkit-scrollbar{width:6px}
+  #mlist::-webkit-scrollbar-thumb{background:rgba(120,190,255,.35);border-radius:3px}
+  #mlist::-webkit-scrollbar-track{background:transparent}
 
   /* 一键「普通桌面」: 隐藏星穹一切, 露出真实桌面; 右下角留返回按钮 */
   body.plain #sky,body.plain #fx,body.plain #rail,body.plain #console,body.plain #cells{display:none}
@@ -298,7 +302,7 @@
       <span id="mclear" title="清空当前列表" style="margin-left:auto;font-size:10px;color:#6f8aa6;cursor:pointer">清空</span>
     </div>
     <div class="bd" style="padding-top:4px">
-      <div id="mlist" style="height:60px;overflow:hidden"></div>
+      <div id="mlist" style="height:60px;overflow-y:auto;overflow-x:hidden"></div>
       <div class="addrow"><input id="snew" placeholder="搜索文件 / 文件夹，回车"><button id="sbtn">⌕</button></div>
     </div>
   </div>
