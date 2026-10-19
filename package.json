@@ -1,7 +1,7 @@
-{
+﻿{
   "name": "desktop-shell",
   "version": "1.0.0",
-  "description": "桌面星穹浮层 (Electron 透明置顶窗口)",
+  "description": "妗岄潰鏄熺┕娴眰 (Electron 閫忔槑缃《绐楀彛)",
   "main": "main.js",
   "scripts": {
     "start": "electron ."
