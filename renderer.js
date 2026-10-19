@@ -321,14 +321,15 @@
   function renderAll() { applyWallAuto(); renderWork(); renderTodo(); renderMsgs(); renderCells(); markRect(); }
   /* ---- 静态壁纸: 导出当前星空 → Windows 壁纸; 可选定时重导(跟着天象走) ---- */
   var wallTimer = null, wallSig = '';
-  function pushOsWallpaper() {
+  function pushOsWallpaper(quiet) {
     var cv = document.getElementById('sky');
     if (!cv || !shell.setOsWallpaper) return;
     var url = '';
     try { url = cv.toDataURL('image/png'); } catch (e) { url = ''; }
     if (!url) return;
     shell.setOsWallpaper(url).then(function (ok) {
-      addLocalMsg('Windows 壁纸已更新' + (ok ? '' : '（失败）'), ok ? 'info' : 'err');
+      if (ok && quiet) return;                 // 自动更新成功: 不刷消息(失败才提示)
+      addLocalMsg('Windows 壁纸' + (ok ? '已更新' : '更新失败'), ok ? 'info' : 'err');
     });
   }
   function applyWallAuto() {
