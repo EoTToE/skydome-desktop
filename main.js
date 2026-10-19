@@ -139,7 +139,10 @@ function persist() {
 function pushState() { if (win && !win.isDestroyed()) win.webContents.send('state:changed', state); }
 function addMessage(text, level, extra) {
   const m = { time: Date.now(), level: level || 'info', text: String(text == null ? '' : text) };
-  if (extra && typeof extra === 'object' && extra.path) m.path = String(extra.path);   // 可点击条目(如新文件提醒)带上路径
+  if (extra && typeof extra === 'object') {
+    if (extra.path) m.path = String(extra.path);   // 可点击条目(如新文件提醒)带上路径
+    if (extra.kind) m.kind = String(extra.kind);   // 'notify' | 'search' —— 消息格子按功能分区
+  }
   state.messages.unshift(m);
   if (state.messages.length > 50) state.messages.length = 50;
   persist(); pushState();
@@ -432,7 +435,7 @@ function scanNewFiles() {
       let st = null; try { st = fs.statSync(full); } catch (e) { continue; }
       if (st.mtimeMs < APP_START - 60000) continue;      // 只报本次运行之后新出现的
       reportedNew.add(key);
-      addMessage('未收纳的新文件：' + name + '（点击收纳到格子）', 'warn', { path: full });
+      addMessage('未收纳的新文件：' + name + '（点击收纳到格子）', 'warn', { path: full, kind: 'notify' });
     }
   }
 }
@@ -543,6 +546,26 @@ function setOsWallpaperFromDataUrl(dataUrl) {
     return !!f(20, 0, p, 3);
   } catch (e) { console.warn('[wallpaper]', e && e.message); return false; }
 }
+/* 文件/文件夹名搜索(限定桌面+下载, 深度 3, 最多 15 条) —— 供消息格子的搜索功能 */
+function searchByName(roots, q, maxDepth, limit) {
+  const ql = String(q || '').toLowerCase(); const out = [];
+  if (!ql) return out;
+  function walk(dir, depth) {
+    if (out.length >= limit || depth > maxDepth) return;
+    let ents = [];
+    try { ents = fs.readdirSync(dir, { withFileTypes: true }); } catch (e) { return; }
+    for (const e of ents) {
+      if (out.length >= limit) return;
+      const nm = e.name;
+      if (nm.startsWith('.') || nm === 'desktop.ini' || nm.startsWith('~$')) continue;
+      const full = path.join(dir, nm);
+      if (nm.toLowerCase().indexOf(ql) >= 0) out.push({ path: full, name: nm, isDir: e.isDirectory() });
+      if (e.isDirectory() && depth < maxDepth) walk(full, depth + 1);
+    }
+  }
+  for (const r of roots) { walk(r, 0); if (out.length >= limit) break; }
+  return out;
+}
 function registerIpc() {
   ipcMain.handle('state:get', () => state);
   ipcMain.handle('state:set', (e, s) => { if (s && typeof s === 'object') { state = s; migrateState(); persist(); } return state; });
@@ -644,6 +667,22 @@ function registerIpc() {
   ipcMain.handle('autostart:set', (e, on) => autostartSet(!!on));
   ipcMain.handle('cells:classify', () => classifyDesktop());
   ipcMain.handle('os:wallpaper', (e, dataUrl) => setOsWallpaperFromDataUrl(dataUrl));
+  ipcMain.handle('fs:search', (e, q) => {
+    const roots = [app.getPath('desktop'), app.getPath('downloads')];
+    return searchByName(roots, q, 3, 15);
+  });
+  /* 消息右键菜单: 打开文件位置 / 收纳到格子 / 删除这条消息 */
+  ipcMain.handle('msg:menu', (e, payload) => {
+    const p = payload && payload.path, kind = payload && payload.kind, id = payload && payload.id;
+    const send = (action) => { if (win && !win.isDestroyed()) win.webContents.send('msg:action', { action, path: p, kind, id }); };
+    const tpl = [];
+    if (p) tpl.push({ label: '打开文件位置', click: () => send('reveal') });
+    if (p && kind !== 'search') tpl.push({ label: '收纳到格子…', click: () => send('file') });
+    tpl.push({ type: 'separator' });
+    tpl.push({ label: '删除这条消息', click: () => send('del') });
+    Menu.buildFromTemplate(tpl).popup({ window: win });
+    return true;
+  });
   ipcMain.on('hit-rects', (e, r) => { if (Array.isArray(r)) rects = r; });
   ipcMain.on('force-interactive', (e, v) => { forceInteractive = !!v; });
   ipcMain.on('msg:add', (e, text, level) => addMessage(text, level));

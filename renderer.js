@@ -773,34 +773,65 @@
     });
   }
 
+  var msgsTab = 'notify';                      // 'notify' | 'search' (两个独立功能区, 互不干扰)
+  function pickIntoCell(pth) {
+    if (!shell.pickTarget) return;
+    shell.pickTarget().then(function (id) {
+      if (!id) return;
+      var tgt = (S.cells || []).filter(function (x) { return x.id === id; })[0];
+      if (!tgt) return;
+      tgt.items = tgt.items || [];
+      if (tgt.items.indexOf(pth) < 0) tgt.items.push(pth);
+      save(); renderAll();
+      addLocalMsg('已收纳：' + baseName(pth) + ' → ' + (tgt.title || id), 'info');
+    });
+  }
+  function doSearch() {
+    var inp = document.getElementById('snew');
+    var q = (inp && inp.value || '').trim();
+    if (!q || !shell.searchFiles) return;
+    S.messages = (S.messages || []).filter(function (m) { return m.kind !== 'search'; });   // 清掉上一轮搜索结果
+    shell.searchFiles(q).then(function (arr) {
+      (arr || []).forEach(function (x) {
+        S.messages.unshift({ time: Date.now() + Math.random(), level: 'info', kind: 'search',
+          text: (x.isDir ? '📁 ' : '📄 ') + x.name, path: x.path, isDir: !!x.isDir });
+      });
+      if (inp) inp.value = '';
+      msgsTab = 'search';
+      save(); renderAll();
+    });
+  }
   function renderMsgs() {
     var el = document.getElementById('mlist');
+    if (!el) return;
     el.innerHTML = '';
-    var list = (S.messages || []).slice(0, 3);   // 硬上限: 只显示最近 3 条
-    if (!list.length) { el.innerHTML = '<div class="empty">暂无消息</div>'; return; }
+    var all = (S.messages || []);
+    var list = all.filter(function (m) {
+      return (msgsTab === 'search') ? (m.kind === 'search') : (m.kind !== 'search');
+    }).slice(0, 3);
+    var tabs = document.querySelectorAll('.mtab');
+    for (var i = 0; i < tabs.length; i++) tabs[i].classList.toggle('on', tabs[i].getAttribute('data-mt') === msgsTab);
+    if (!list.length) { el.innerHTML = '<div class="empty">' + (msgsTab === 'search' ? '输入关键字回车搜索' : '暂无消息') + '</div>'; return; }
     list.forEach(function (m) {
       var d = document.createElement('div');
-      d.className = 'msg ' + (m.level || 'info');
+      d.className = 'msg ' + (m.level || 'info') + (m.path ? ' act' : '');
       var t = document.createElement('span'); t.className = 'mt';
       var dt = new Date(m.time || Date.now());
       t.textContent = ('0' + dt.getHours()).slice(-2) + ':' + ('0' + dt.getMinutes()).slice(-2);
       d.appendChild(t); d.appendChild(document.createTextNode(m.text || ''));
-      if (m.path) {                              // 未收纳新文件提醒: 点击 → 选格子收纳
-        d.classList.add('act'); d.title = '点击收纳到格子';
-        (function (pth) {
-          d.onclick = function () {
-            if (!shell.pickTarget) return;
-            shell.pickTarget().then(function (id) {
-              if (!id) return;
-              var tgt = (S.cells || []).filter(function (x) { return x.id === id; })[0];
-              if (!tgt) return;
-              tgt.items = tgt.items || [];
-              if (tgt.items.indexOf(pth) < 0) tgt.items.push(pth);
-              save(); renderAll();
-              addLocalMsg('已收纳：' + baseName(pth) + ' → ' + (tgt.title || id), 'info');
-            });
+      if (m.path) {
+        d.title = (m.kind === 'search' ? '点击打开所在文件夹' : '点击收纳到格子') + ' · 右键更多';
+        (function (msg) {
+          d.onclick = function (ev) {
+            ev.stopPropagation();
+            if (msg.kind === 'search') { if (shell.fsReveal) shell.fsReveal(msg.path); return; }
+            pickIntoCell(msg.path);
           };
-        })(m.path);
+          d.oncontextmenu = function (ev) {
+            ev.preventDefault(); ev.stopPropagation();
+            if (shell.msgMenu) shell.msgMenu({ path: msg.path, kind: msg.kind || '', id: msg.time });
+          };
+        })(m);
       }
       el.appendChild(d);
     });
@@ -1248,6 +1279,27 @@
     document.getElementById('tadd').onclick = addTodo;
     var tn = document.getElementById('tnew');
     tn.addEventListener('keydown', function (e) { if (e.key === 'Enter') addTodo(); });
+    /* 消息格子: 搜索框 + 通知/搜索 标签 + 清空 + 右键动作回送 */
+    var sn = document.getElementById('snew');
+    if (sn) {
+      sn.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); doSearch(); } });
+      sn.addEventListener('focus', function () { shell.forceInteractive && shell.forceInteractive(true); });
+      sn.addEventListener('blur', function () { shell.forceInteractive && shell.forceInteractive(false); });
+    }
+    var sb2 = document.getElementById('sbtn'); if (sb2) sb2.onclick = function (e) { e.stopPropagation(); doSearch(); };
+    var mts = document.querySelectorAll('.mtab');
+    for (var mi = 0; mi < mts.length; mi++) mts[mi].onclick = function (e) { e.stopPropagation(); msgsTab = this.getAttribute('data-mt'); renderMsgs(); markRect(); };
+    var mc = document.getElementById('mclear'); if (mc) mc.onclick = function (e) {
+      e.stopPropagation();
+      S.messages = (S.messages || []).filter(function (m) { return (msgsTab === 'search') ? (m.kind !== 'search') : (m.kind === 'search'); });
+      save(); renderAll();
+    };
+    if (shell.onMsgAction) shell.onMsgAction(function (a) {
+      if (!a) return;
+      if (a.action === 'reveal') { if (a.path && shell.fsReveal) shell.fsReveal(a.path); }
+      else if (a.action === 'file') { pickIntoCell(a.path); }
+      else if (a.action === 'del') { S.messages = (S.messages || []).filter(function (m) { return m.time !== a.id; }); save(); renderAll(); }
+    });
     tn.addEventListener('focus', function () { shell.forceInteractive && shell.forceInteractive(true); });
     tn.addEventListener('blur', function () { shell.forceInteractive && shell.forceInteractive(false); });
     document.getElementById('quit').onclick = function () { shell.quit && shell.quit(); };

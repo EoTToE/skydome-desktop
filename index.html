@@ -98,6 +98,8 @@
   .msg .mt{color:#5f83a8;font-family:Consolas,monospace;margin-right:6px}
   .msg.ok{color:#a7f0d6} .msg.warn{color:#ffd78a} .msg.err{color:#ff9b9b}
   .msg.act{cursor:pointer;text-decoration:underline dotted;text-underline-offset:2px}
+  .mtab{font-weight:600;color:#6f8aa6;cursor:pointer;font-size:10px;letter-spacing:.06em}
+  .mtab.on{color:#ffd868}
 
   /* 一键「普通桌面」: 隐藏星穹一切, 露出真实桌面; 右下角留返回按钮 */
   body.plain #sky,body.plain #fx,body.plain #rail,body.plain #console,body.plain #cells{display:none}
@@ -291,8 +293,14 @@
   </div>
 
   <div id="panel-msgs" class="panel">
-    <div class="hd">消息 · 实时</div>
-    <div class="bd" id="mlist"></div>
+    <div class="hd" style="display:flex;align-items:center;gap:8px">
+      <b class="mtab on" data-mt="notify">通知</b><b class="mtab" data-mt="search">搜索</b>
+      <span id="mclear" title="清空当前列表" style="margin-left:auto;font-size:10px;color:#6f8aa6;cursor:pointer">清空</span>
+    </div>
+    <div class="bd" style="padding-top:4px">
+      <div id="mlist" style="height:60px;overflow:hidden"></div>
+      <div class="addrow"><input id="snew" placeholder="搜索文件 / 文件夹，回车"><button id="sbtn">⌕</button></div>
+    </div>
   </div>
 </div>
 
