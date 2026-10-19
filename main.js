@@ -538,7 +538,7 @@ function setOsWallpaperFromDataUrl(dataUrl) {
   try {
     const b64 = String(dataUrl || '').split(',')[1] || '';
     if (!b64) return false;
-    const p = path.join(app.getPath('temp'), 'skydome-wallpaper.png');
+    const p = path.join(app.getPath('userData'), 'skydome-wallpaper.png');   // 放 userData: 不会被系统清理 TEMP 时误删
     fs.writeFileSync(p, Buffer.from(b64, 'base64'));
     const koffi = require('koffi');
     const u32 = koffi.load('user32.dll');
@@ -717,6 +717,13 @@ function startHttp() {
         httpLastHealthAgoMs: httpLastHealthAt ? (Date.now() - httpLastHealthAt) : -1,
         httpLastUA: httpLastUA ? httpLastUA.slice(0, 120) : '',
       }));
+    }
+    if (u.pathname === '/wallpaper') {   // 把当前星空导出并设为 Windows 壁纸 (一键/诊断)
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      win.webContents.executeJavaScript("(function(){var c=document.getElementById('sky');return c?c.toDataURL('image/png'):'';})()")
+        .then(function (url) { const ok = setOsWallpaperFromDataUrl(url); res.end(JSON.stringify({ ok: ok, bytes: (url || '').length })); })
+        .catch(function (e) { res.end(JSON.stringify({ ok: false, error: String(e && e.message || e) })); });
+      return;
     }
     if (u.pathname === '/notify') {
       const m = addMessage(u.searchParams.get('text') || '(空消息)', u.searchParams.get('level') || 'info');
